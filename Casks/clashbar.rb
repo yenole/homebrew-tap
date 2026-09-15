@@ -20,4 +20,9 @@ cask "clashbar" do
 
   app "ClashBar.app"
 
+  zap trash: [
+    "~/Library/Application Support/ClashBar",
+    "~/Library/Caches/com.sitoi.ClashBar",
+    "~/Library/Preferences/com.sitoi.ClashBar.plist",
+  ]
 end
