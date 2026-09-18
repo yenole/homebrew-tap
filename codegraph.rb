@@ -27,4 +27,7 @@ class Codegraph < Formula
     bin.install_symlink libexec/"bin/codegraph"
   end
 
+  test do
+    assert_match "1.6.0", shell_output("#{bin}/codegraph --version")
+  end
 end
