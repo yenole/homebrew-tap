@@ -1,0 +1,136 @@
+name: Update Codegraph formula
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "25 4 * * *"
+
+permissions: {}
+
+concurrency:
+  group: codegraph-autobump
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Get latest release metadata
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/colbymchenry/codegraph/releases/latest > "$RUNNER_TEMP/release.json"
+          python3 - "$RUNNER_TEMP/release.json" "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import re
+          import sys
+
+          release_path, output_path = sys.argv[1:]
+          with open(release_path, encoding="utf-8") as release_file:
+              release = json.load(release_file)
+
+          tag = release.get("tag_name", "")
+          if not re.fullmatch(r"v\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?", tag):
+              raise SystemExit(f"Unexpected release tag: {tag!r}")
+
+          expected_assets = {
+              "codegraph-darwin-arm64.tar.gz",
+              "codegraph-darwin-x64.tar.gz",
+              "codegraph-linux-arm64.tar.gz",
+              "codegraph-linux-x64.tar.gz",
+          }
+          assets = {asset["name"]: asset for asset in release.get("assets", [])}
+          for name in sorted(expected_assets):
+              digest = assets.get(name, {}).get("digest", "")
+              if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                  raise SystemExit(f"Missing valid SHA-256 digest for {name}")
+
+          with open(output_path, "a", encoding="utf-8") as output:
+              output.write(f"tag={tag}\n")
+              output.write(f"version={tag.removeprefix('v')}\n")
+          PY
+
+      - name: Update platform URLs, checksums and test version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          python3 - "$RUNNER_TEMP/release.json" "$RELEASE_TAG" "$RELEASE_VERSION" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          release_path, tag, version = sys.argv[1:]
+          formula_path = Path("Formula/codegraph.rb")
+          contents = formula_path.read_text(encoding="utf-8")
+          with open(release_path, encoding="utf-8") as release_file:
+              release = json.load(release_file)
+          assets = {asset["name"]: asset for asset in release.get("assets", [])}
+
+          platform_assets = (
+              "codegraph-darwin-arm64.tar.gz",
+              "codegraph-darwin-x64.tar.gz",
+              "codegraph-linux-arm64.tar.gz",
+              "codegraph-linux-x64.tar.gz",
+          )
+          for name in platform_assets:
+              asset = assets.get(name)
+              digest = asset.get("digest", "") if asset else ""
+              if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                  raise SystemExit(f"Missing valid SHA-256 digest for {name}")
+
+              url_pattern = re.compile(
+                  rf'url "https://github\.com/colbymchenry/codegraph/releases/download/[^/]+/{re.escape(name)}"'
+              )
+              contents, url_count = url_pattern.subn(
+                  f'url "https://github.com/colbymchenry/codegraph/releases/download/{tag}/{name}"',
+                  contents,
+              )
+              if url_count != 1:
+                  raise SystemExit(f"Expected one URL for {name}, found {url_count}")
+
+              checksum_pattern = re.compile(
+                  rf'(url "https://github\.com/colbymchenry/codegraph/releases/download/{re.escape(tag)}/{re.escape(name)}"\n'
+                  rf'\s+sha256 ")[0-9a-f]{{64}}(")'
+              )
+              contents, checksum_count = checksum_pattern.subn(
+                  lambda match: f'{match.group(1)}{digest.removeprefix("sha256:")}"',
+                  contents,
+              )
+              if checksum_count != 1:
+                  raise SystemExit(f"Expected one checksum for {name}, found {checksum_count}")
+
+          contents, version_count = re.subn(
+              r'assert_match "[^"]+", shell_output\("#\{bin\}/codegraph --version"\)',
+              f'assert_match "{version}", shell_output("#{{bin}}/codegraph --version")',
+              contents,
+          )
+          if version_count != 1:
+              raise SystemExit(f"Expected one version assertion, found {version_count}")
+
+          formula_path.write_text(contents, encoding="utf-8")
+          print(f"Updated Codegraph formula to {version}")
+          PY
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: 更新 Codegraph 版本"
+          title: "chore: 更新 Codegraph 到 ${{ steps.release.outputs.version }}"
+          body: |
+            根据 Codegraph 最新 GitHub Release 自动更新 formula。
+
+            - 更新各平台下载地址与 SHA-256
+            - 更新 formula 测试版本
+          branch: autobump/codegraph
+          delete-branch: true
