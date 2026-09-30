@@ -16,6 +16,11 @@ cask "clashbar" do
   desc "Clash client"
   homepage "https://github.com/Sitoi/ClashBar"
 
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
   depends_on :macos
 
   app "ClashBar.app"
