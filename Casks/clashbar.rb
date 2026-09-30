@@ -1,13 +1,13 @@
 cask "clashbar" do
-  version "0.3.3"
+  version "0.3.4"
 
   on_arm do
-    sha256 "ff8ca07ce4ee6780fce19d620292b45b85667a92b1e12c6bffc0c213d0a4680c"
+    sha256 "2b4f343f1a93f641b4c52efa09f9a2a189bb843619fba9ea652a7f126ffe3fc7"
 
     url "https://github.com/Sitoi/ClashBar/releases/download/v#{version}/ClashBar-#{version}-apple-silicon.dmg"
   end
   on_intel do
-    sha256 "181d2172a837fcecd5e7cce7c40e59c845144b25c2628d22018377e721ec6c8a"
+    sha256 "b410987cb6f923264810787ca3f5ae5a408269eef4c6934a85857ff3740989e2"
 
     url "https://github.com/Sitoi/ClashBar/releases/download/v#{version}/ClashBar-#{version}-intel.dmg"
   end
@@ -21,7 +21,7 @@ cask "clashbar" do
     strategy :github_latest
   end
 
-  depends_on :macos
+  depends_on macos: :ventura
 
   app "ClashBar.app"
 
